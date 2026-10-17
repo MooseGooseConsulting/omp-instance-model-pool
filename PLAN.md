@@ -110,7 +110,7 @@ Run the actual installed OMP binary against at least two functioning model/provi
 
 ### LT-01 — Real model diversity
 
-Launch 20 new sessions and verify assignments follow the configured eligibility and randomization policy. Confirm more than one model receives real requests; this small sample is not proof of weight accuracy.
+Use deterministic pool configurations or individually pinned provider-selection fixtures to prove that **each** of at least two real provider/model endpoints can serve a new OMP instance. Separately launch at least 20 randomized new sessions to verify eligibility, assignment recording, and no in-session switching. Do not require both models to appear in a small independent random sample: even a correct weighted lottery can draw the same model every time. Statistical weight accuracy is covered by a large-seed automated distribution test, not by 20 live draws.
 
 ### LT-02 — Instance immutability
 
@@ -151,7 +151,7 @@ The first implementation is complete only when:
 
 ## 6. Reference implementations
 
-- OMP extension APIs and lifecycle.
+- [OMP extension APIs and lifecycle, including documented `pi.appendEntry` persistence](https://github.com/can1357/oh-my-pi/blob/main/docs/extensions.md#session-and-state-patterns).
 - OMP subagent dispatch behavior.
 - OMP extension event types.
 - `pi-weighted-model-router`.
