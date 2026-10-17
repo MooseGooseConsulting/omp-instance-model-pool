@@ -14,6 +14,7 @@ function harness(options: { sub?: boolean; eligible?: string[] } = {}) {
   });
   let current: any = models[0];
   let sessionId = 'session-0';
+  let parentSession: string | undefined;
   let stopped = false;
   let setCalls = 0;
   const pi = {
@@ -27,7 +28,7 @@ function harness(options: { sub?: boolean; eligible?: string[] } = {}) {
     agent: {kind:options.sub?'sub':'main',name:options.sub?'reviewer':'main'},
     models: {list:()=>models, current:()=>current,
       resolve:(spec:string)=>models.find(m=>`${m.provider}/${m.id}`===spec)},
-    sessionManager: {getBranch:()=>entries,getSessionId:()=>sessionId},
+    sessionManager: {getBranch:()=>entries,getSessionId:()=>sessionId,getHeader:()=>({id:sessionId,parentSession})},
     ui: {notify(msg:string) {notifications.push(msg);}, setStatus() {}}, 
     shutdown() {stopped=true;},
   };
@@ -36,7 +37,7 @@ function harness(options: { sub?: boolean; eligible?: string[] } = {}) {
     const handler=handlers.get(name);assert.ok(handler,`missing event ${name}`);
     return await handler!(payload,ctx);
   };
-  return {emit,ctx,entries,pi,models,notifications,setSession:(id:string)=>{sessionId=id;},
+  return {emit,ctx,entries,pi,models,notifications,setSession:(id:string)=>{sessionId=id;},setParent:(id?:string)=>{parentSession=id;},
     get current(){return current},get stopped(){return stopped},get setCalls(){return setCalls}};
 }
 
@@ -73,6 +74,18 @@ test('new and fork create exactly one record each, even with both fork notificat
   assert.equal(h.entries.length,3);
   await h.emit('session_branch',{reason:'branch'});
   assert.equal(h.entries.length,3);
+});
+test('CLI startup fork redraws when the source assignment is copied',async()=>{
+  const h=harness();await h.emit('session_start');
+  const inherited=h.entries[0].data;
+  assert.equal(inherited.sessionId,'session-0');
+  h.setParent('session-0');h.setSession('forked-session');
+  // --fork creates the child before extensions load; it emits only session_start.
+  await h.emit('session_start');
+  assert.equal(h.entries.length,2);
+  assert.equal(h.entries[1].data.sessionId,'forked-session');
+  await h.emit('session_start');
+  assert.equal(h.entries.length,2);
 });
 test('main pool follows new project config without sharing cached selector',async()=>{
   const previous=process.env.OMP_INSTANCE_MODEL_POOL_CONFIG;
