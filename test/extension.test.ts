@@ -16,6 +16,7 @@ function harness(options: { sub?: boolean; eligible?: string[] } = {}) {
   let sessionId = 'session-0';
   let parentSession: string | undefined;
   let stopped = false;
+  let aborted = false;
   let setCalls = 0;
   const pi = {
     on(name: string, fn: Function) {handlers.set(name,fn);},
@@ -31,6 +32,7 @@ function harness(options: { sub?: boolean; eligible?: string[] } = {}) {
     sessionManager: {getBranch:()=>entries,getSessionId:()=>sessionId,getHeader:()=>({id:sessionId,parentSession})},
     ui: {notify(msg:string) {notifications.push(msg);}, setStatus() {}}, 
     shutdown() {stopped=true;},
+    abort() {aborted=true;},
   };
   extension(pi as any);
   const emit = async (name:string, payload:object={}) => {
@@ -38,7 +40,7 @@ function harness(options: { sub?: boolean; eligible?: string[] } = {}) {
     return await handler!(payload,ctx);
   };
   return {emit,ctx,entries,pi,models,notifications,setSession:(id:string)=>{sessionId=id;},setParent:(id?:string)=>{parentSession=id;},
-    get current(){return current},get stopped(){return stopped},get setCalls(){return setCalls}};
+    get current(){return current},get stopped(){return stopped},get aborted(){return aborted},get setCalls(){return setCalls}};
 }
 
 const temp = mkdtempSync(join(tmpdir(),'omp-model-pool-'));
@@ -129,5 +131,14 @@ test('drift and fallback cause shutdown',async()=>{
   const h=harness();await h.emit('session_start');
   await h.emit('retry_fallback_applied',{from:'one/a',to:'two/b'});
   assert.equal(h.stopped,true);
+  assert.equal(h.aborted,true);
+});
+test('provider request aborts when an assignment is missing',async()=>{
+  const h=harness();await h.emit('session_start');
+  await h.emit('before_provider_request',{payload:{request:true}});
+  assert.equal(h.aborted,false);
+  const missing=harness();
+  await missing.emit('before_provider_request',{payload:{request:true}});
+  assert.equal(missing.aborted,true);
 });
 process.on('exit',()=>{delete process.env.OMP_INSTANCE_MODEL_POOL_CONFIG;rmSync(temp,{recursive:true,force:true});});
