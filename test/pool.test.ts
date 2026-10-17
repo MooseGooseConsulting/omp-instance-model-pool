@@ -43,3 +43,12 @@ test('rejects non-integer shuffle weights and invalid RNG', () => {
   assert.throws(()=>validateConfig({...config,strategy:'shuffle-bag',pools:{...config.pools,main:[{model:'one/a',weight:1.5}]}}),/integers/);
   assert.throws(()=>new PoolSelector(config,()=>1).choose('main',available),/RNG/);
 });
+test('allows slashes inside model ids and rejects a trailing slash', () => {
+  const selector = 'openrouter/anthropic/claude-sonnet-4';
+  const accepted = validateConfig({...config, pools:{...config.pools, main:[{model:selector,weight:1}]}});
+  assert.equal(accepted.pools.main[0]!.model, selector);
+  assert.throws(() => validateConfig({...config, pools:{...config.pools, main:[{model:'openrouter/anthropic/',weight:1}]}}), /selector/);
+});
+test('rejects mixed-case pool names that would miss the lowercase agent lookup', () => {
+  assert.throws(() => validateConfig({...config, pools:{...config.pools, Reviewer:[{model:'one/a',weight:1}]}}), /lowercase/);
+});

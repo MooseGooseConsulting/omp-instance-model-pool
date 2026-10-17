@@ -10,7 +10,8 @@ function harness(options: { sub?: boolean; eligible?: string[] } = {}) {
   const entries: any[] = [];
   const notifications: string[] = [];
   const models = (options.eligible ?? ['one/a','two/b','three/c']).map(s => {
-    const [provider, id] = s.split('/'); return {provider,id};
+    const slash = s.indexOf('/');
+    return {provider:s.slice(0, slash), id:s.slice(slash + 1)};
   });
   let current: any = models[0];
   let sessionId = 'session-0';
@@ -65,6 +66,21 @@ test('main session chooses once, preserves selection across prompts and resumes'
   assert.equal(h.current.id,original);
   assert.equal(h.entries.length,1);
 });
+test('fresh extension restores the persisted assignment instead of drawing again',async()=>{
+  const first=harness();
+  await first.emit('session_start');
+  const saved=first.entries.map(entry=>({...entry,data:{...entry.data}}));
+  const modelId=first.current.id;
+  const resumed=harness();
+  resumed.entries.push(...saved);
+  await resumed.emit('session_start');
+  assert.equal(resumed.current.id,modelId);
+  assert.equal(resumed.entries.length,1);
+  assert.equal(resumed.setCalls,1);
+  await resumed.emit('session_switch',{reason:'resume'});
+  assert.equal(resumed.entries.length,1);
+  assert.equal(resumed.current.id,modelId);
+});
 test('new and fork create exactly one record each, even with both fork notifications',async()=>{
   const h=harness(); await h.emit('session_start');
   h.setSession('session-1');
@@ -76,6 +92,15 @@ test('new and fork create exactly one record each, even with both fork notificat
   assert.equal(h.entries.length,3);
   await h.emit('session_branch',{reason:'branch'});
   assert.equal(h.entries.length,3);
+});
+test('unqualified entry branch draws once for the new session',async()=>{
+  const h=harness(); await h.emit('session_start');
+  h.setSession('entry-branch');
+  await h.emit('session_branch',{});
+  assert.equal(h.entries.length,2);
+  assert.equal(h.entries[1].data.sessionId,'entry-branch');
+  await h.emit('session_branch',{});
+  assert.equal(h.entries.length,2);
 });
 test('CLI startup fork redraws when the source assignment is copied',async()=>{
   const h=harness();await h.emit('session_start');
@@ -132,6 +157,26 @@ test('drift and fallback cause shutdown',async()=>{
   await h.emit('retry_fallback_applied',{from:'one/a',to:'two/b'});
   assert.equal(h.stopped,true);
   assert.equal(h.aborted,true);
+});
+test('model drift before agent start causes shutdown',async()=>{
+  const h=harness();await h.emit('session_start');
+  const other=h.models.find(m=>m.id!==h.current.id)!;
+  await h.pi.setModel(other);
+  await h.emit('before_agent_start');
+  assert.equal(h.stopped,true);
+  assert.equal(h.aborted,true);
+});
+test('halted agent start still aborts when shutdown would be a no-op',async()=>{
+  const h=harness();await h.emit('session_start');
+  await h.emit('retry_fallback_applied',{from:'one/a',to:'two/b'});
+  const ctx=h.ctx as {abort?:()=>void; shutdown:()=>void};
+  let abortedAgain=false;
+  let shutdowns=0;
+  ctx.abort=()=>{abortedAgain=true;};
+  ctx.shutdown=()=>{shutdowns++;};
+  await h.emit('before_agent_start');
+  assert.equal(abortedAgain,true);
+  assert.equal(shutdowns,1);
 });
 test('provider request aborts when an assignment is missing',async()=>{
   const h=harness();await h.emit('session_start');

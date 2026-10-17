@@ -57,8 +57,9 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
     halted = true;
     ctx.ui.notify(`Model pool: ${message}`, 'error');
     // Headless OMP may supply a no-op shutdown callback. Abort the active turn too.
+    // Optional: a context without abort must still reach shutdown.
     // Real provider tests are still required to establish whether this stops dispatch.
-    ctx.abort();
+    ctx.abort?.();
     ctx.shutdown();
   }
   async function apply(ctx: Ctx, selected: Assignment, append: boolean): Promise<void> {
@@ -116,7 +117,10 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
     await initialize(ctx, event.reason !== 'resume');
   });
   pi.on('session_branch', async (event, ctx) => {
-    if (event.reason !== 'fork') return;
+    // Current OMP sets reason to fork, branch, or btw. OMP 18.4.8 emits a new
+    // entry branch with no reason; that event is a new instance and must draw.
+    // Named non-fork reasons stay ignored so an in-place rewind does not redraw.
+    if (event.reason !== 'fork' && event.reason !== undefined) return;
     if (assignedSessionId === ctx.sessionManager.getSessionId() && assignment) return;
     halted = false;
     assignment = undefined;
@@ -132,7 +136,7 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
     }
   });
   pi.on('before_agent_start', (_event, ctx) => {
-    if (halted) { ctx.shutdown(); return; }
+    if (halted) { ctx.abort?.(); ctx.shutdown(); return; }
     const actual = ctx.models.current();
     if (assignment && (!actual || `${actual.provider}/${actual.id}` !== assignment.model))
       stop(ctx, `model drift detected; expected ${assignment.model}`);

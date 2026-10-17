@@ -1,6 +1,6 @@
 # OMP Instance Model Pool — Implementation Plan
 
-**Status:** Design prepared; implementation and live tests not started.  
+**Status:** Implementation and mocked lifecycle tests are in progress. Live OMP and provider tests (LT-01 through LT-07) have not been run.  
 **Target repository:** `MooseGooseConsulting/omp-instance-model-pool`
 
 ## 1. Deliverables

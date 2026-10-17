@@ -4,7 +4,7 @@ An OMP-native TypeScript extension that draws **one model per new main session o
 
 ## Status
 
-**Experimental implementation for review; real OMP/provider live tests have not yet run.** The deterministic pure-selection and mocked lifecycle tests pass locally (14 tests, Node 22.16.0). See [the detailed plan](PLAN.md) and [installation and caveats](docs/INSTALL.md).
+**Experimental implementation for review; real OMP/provider live tests have not yet run.** The deterministic pure-selection and mocked lifecycle tests pass locally (20 tests, Node 22.14.0). See [the detailed plan](PLAN.md) and [installation and caveats](docs/INSTALL.md).
 
 ## Implemented
 

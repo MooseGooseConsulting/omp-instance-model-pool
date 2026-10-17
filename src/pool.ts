@@ -21,12 +21,16 @@ export function validateConfig(input: unknown): PoolConfig {
   if (!Array.isArray(pools.main) || !Array.isArray(pools["subagent-default"]))
     throw new Error("main and subagent-default pools are required");
   for (const [name, entries] of Object.entries(pools)) {
+    if (name !== name.toLowerCase())
+      throw new Error(`pool name ${name} must be lowercase`);
     if (!name.trim() || !Array.isArray(entries) || entries.length === 0)
       throw new Error(`pool ${name} must be a nonempty array`);
     const seen = new Set<string>();
     for (const raw of entries) {
       const c = raw as Candidate;
-      if (!c || typeof c.model !== "string" || !/^[^\s/]+\/[^\s/]+$/.test(c.model))
+      // Provider and model id are split on the first slash. Model ids may contain
+      // further slashes (for example OpenRouter ids such as anthropic/claude-sonnet-4).
+      if (!c || typeof c.model !== "string" || !/^[^\s/]+\/\S+$/.test(c.model) || c.model.endsWith("/"))
         throw new Error(`invalid provider/model selector in ${name}`);
       if (!Number.isFinite(c.weight) || c.weight <= 0)
         throw new Error(`weights must be positive finite numbers in ${name}`);
