@@ -7,7 +7,7 @@ import { PoolSelector, validateConfig, type Strategy } from './pool.ts';
 
 const ENTRY = 'dev.moosegoose.omp-instance-model-pool.assignment';
 const ENV = 'OMP_INSTANCE_MODEL_POOL_CONFIG';
-type Assignment = { model: string; pool?: string; strategy?: Strategy; at: string };
+type Assignment = { model: string; pool?: string; strategy?: Strategy; sessionId?: string; at: string };
 type Ctx = ExtensionContext;
 
 function getConfigPath(cwd: string): string {
@@ -89,9 +89,17 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
     if (assignedSessionId === id && assignment) return;
     try {
       const old = redraw ? undefined : persisted(ctx);
-      if (old) { await apply(ctx, old, false); return; }
+      const inherited = old && (
+        (old.sessionId && old.sessionId !== id) ||
+        (!old.sessionId && !!ctx.sessionManager.getHeader()?.parentSession)
+      );
+      if (old && !inherited) {
+        // Migrate legacy entries so future CLI startup forks can be distinguished.
+        await apply(ctx, {...old, sessionId:id}, !old.sessionId);
+        return;
+      }
       const selection = getSelector(ctx).choose('main', availableModels(ctx));
-      await apply(ctx, {...selection, at:new Date().toISOString()}, true);
+      await apply(ctx, {...selection, sessionId:id, at:new Date().toISOString()}, true);
     } catch (error) {
       stop(ctx, `initialization failed: ${String(error)}`);
     }
