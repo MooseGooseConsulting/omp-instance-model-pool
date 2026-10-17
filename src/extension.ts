@@ -56,6 +56,9 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
   function stop(ctx: Ctx, message: string): void {
     halted = true;
     ctx.ui.notify(`Model pool: ${message}`, 'error');
+    // Headless OMP may supply a no-op shutdown callback. Abort the active turn too.
+    // Real provider tests are still required to establish whether this stops dispatch.
+    ctx.abort();
     ctx.shutdown();
   }
   async function apply(ctx: Ctx, selected: Assignment, append: boolean): Promise<void> {
@@ -133,6 +136,13 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
     const actual = ctx.models.current();
     if (assignment && (!actual || `${actual.provider}/${actual.id}` !== assignment.model))
       stop(ctx, `model drift detected; expected ${assignment.model}`);
+  });
+  pi.on('before_provider_request', (event, ctx) => {
+    const actual = ctx.model ?? ctx.models.current();
+    if (halted || !assignment || !actual || `${actual.provider}/${actual.id}` !== assignment.model)
+      stop(ctx, `provider request attempted on ${actual ? `${actual.provider}/${actual.id}` : 'unknown'}; expected ${assignment?.model ?? 'no assignment'}`);
+    // This hook provides best-effort abort, not a native request-blocking return.
+    return event.payload;
   });
   pi.on('retry_fallback_applied', (event, ctx) => {
     if (assignment) stop(ctx, `unexpected model fallback ${event.from} -> ${event.to}`);
