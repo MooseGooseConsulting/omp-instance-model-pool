@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "strategy": "weighted-random",
+  "pools": {
+    "main": [
+      {"model": "your-provider/model-a", "weight": 3},
+      {"model": "your-provider/model-b", "weight": 1}
+    ],
+    "reviewer": [{"model": "your-provider/model-b", "weight": 1}],
+    "subagent-default": [
+      {"model": "your-provider/model-a", "weight": 1},
+      {"model": "your-provider/model-b", "weight": 1}
+    ]
+  }
+}
