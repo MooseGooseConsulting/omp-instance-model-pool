@@ -3,11 +3,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent';
-import { PoolSelector, validateConfig, type Selection } from './pool.ts';
+import { PoolSelector, validateConfig, type Strategy } from './pool.ts';
 
 const ENTRY = 'dev.moosegoose.omp-instance-model-pool.assignment';
 const ENV = 'OMP_INSTANCE_MODEL_POOL_CONFIG';
-type Assignment = Selection & { at: string };
+type Assignment = { model: string; pool?: string; strategy?: Strategy; at: string };
 type Ctx = ExtensionContext;
 
 function getConfigPath(cwd: string): string {
@@ -34,13 +34,22 @@ function persisted(ctx: Ctx): Assignment | undefined {
 
 export default function instanceModelPool(pi: ExtensionAPI): void {
   let selector: PoolSelector | undefined;
+  let selectorPath: string | undefined;
+  let selectorContents: string | undefined;
   let assignment: Assignment | undefined;
+  let assignedSessionId: string | undefined;
   let halted = false;
 
   function getSelector(ctx: Ctx): PoolSelector {
-    if (!selector) {
-      const path = getConfigPath(ctx.cwd);
-      selector = new PoolSelector(validateConfig(JSON.parse(readFileSync(path, 'utf8'))));
+    const path = getConfigPath(ctx.cwd);
+    const contents = readFileSync(path, 'utf8');
+    // Reuse shuffle-bag state only for the exact same effective configuration.
+    // A new project or changed config must never inherit another pool's selector.
+    if (!selector || selectorPath !== path || selectorContents !== contents) {
+      const config = validateConfig(JSON.parse(contents));
+      selector = new PoolSelector(config);
+      selectorPath = path;
+      selectorContents = contents;
     }
     return selector;
   }
@@ -60,6 +69,7 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
       return;
     }
     assignment = selected;
+    assignedSessionId = ctx.sessionManager.getSessionId();
     if (append) pi.appendEntry(ENTRY, selected);
     ctx.ui.setStatus('instance-model-pool', `pinned: ${selected.model}`);
   }
@@ -68,10 +78,15 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
       // Parent before_subagent_spawn selected this model. Never draw twice.
       const model = ctx.models.current();
       if (!model) { stop(ctx, 'subagent started without a resolved model'); return; }
-      assignment = {model:`${model.provider}/${model.id}`, pool:ctx.agent.name,
-        strategy:'weighted-random', at:new Date().toISOString()};
+      // Child only receives the chosen model. Parent pool/strategy metadata
+      // is not transmitted by OMP; don't invent those values for diagnostics.
+      assignment = {model:`${model.provider}/${model.id}`, at:new Date().toISOString()};
       return;
     }
+    // Forks can produce both session_switch and session_branch notifications.
+    // One destination session gets exactly one draw.
+    const id = ctx.sessionManager.getSessionId();
+    if (assignedSessionId === id && assignment) return;
     try {
       const old = redraw ? undefined : persisted(ctx);
       if (old) { await apply(ctx, old, false); return; }
@@ -84,12 +99,14 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
 
   pi.on('session_start', async (_event, ctx) => initialize(ctx, false));
   pi.on('session_switch', async (event, ctx) => {
+    if (assignedSessionId === ctx.sessionManager.getSessionId() && assignment) return;
     halted = false;
     assignment = undefined;
     await initialize(ctx, event.reason !== 'resume');
   });
   pi.on('session_branch', async (event, ctx) => {
     if (event.reason !== 'fork') return;
+    if (assignedSessionId === ctx.sessionManager.getSessionId() && assignment) return;
     halted = false;
     assignment = undefined;
     await initialize(ctx, true);
@@ -115,7 +132,7 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
   pi.registerCommand('model-pool', {
     description:'Show the model pinned to this instance',
     handler: async (_args, ctx) => {
-      ctx.ui.notify(assignment ? `Pinned ${assignment.model} from ${assignment.pool} (${assignment.strategy})`
+      ctx.ui.notify(assignment ? `Pinned ${assignment.model}; ${assignment.pool ? `pool ${assignment.pool} (${assignment.strategy})` : 'parent-selected model; pool/strategy not supplied to child'}`
         : 'No model-pool assignment recorded', 'info');
     },
   });
