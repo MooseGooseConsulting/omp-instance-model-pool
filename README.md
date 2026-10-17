@@ -1,19 +1,34 @@
 # OMP Instance Model Pool
 
-An OMP-native TypeScript extension that selects a model once for each main session or subagent, pins that selection for the instance lifetime, and makes routing decisions observable.
+An OMP-native TypeScript extension that draws **one model per new main session or subagent**, then pins that instance to its assigned model. No per-turn classification, random switching, or external proxy.
 
 ## Status
 
-Design prepared. Implementation and live-model validation have not started. See [PLAN.md](./PLAN.md) for the implementation phases and acceptance gates.
+**Experimental implementation for review; real OMP/provider live tests have not yet run.** The deterministic pure-selection and mocked lifecycle tests pass locally (11 tests, Node 22.16.0). See [the detailed plan](PLAN.md) and [installation and caveats](docs/INSTALL.md).
 
-## Intended behavior
+## Implemented
 
-- Weighted random model selection when a main session or subagent instance is created.
-- One pinned model per instance, with no prompt- or tool-call-level switching.
-- Independent role pools for parallel agents, with optional shuffle-bag diversity.
-- Resume restores the existing assignment; a fork receives a new assignment.
-- Unavailable models and provider failures are reported explicitly, without silently switching to paid alternatives.
+- Weighted random and optional in-process shuffle-bag distribution.
+- Separate main, named-agent, and default subagent pools.
+- Strict authenticated-model eligibility; empty subagent pools block dispatch.
+- `before_subagent_spawn` chooses once per child and returns a concrete model.
+- `session_start`, `session_switch`, and `session_branch` handle new, resumed, and forked main sessions.
+- Model assignment saved as OMP custom session state; no re-draw on resume.
+- Detection of unexpected model drift or fallback requests session shutdown.
+- `/model-pool` reports the current assignment.
 
-## Development status
+## Start
 
-The first milestone is to validate the OMP lifecycle and model-assignment APIs against a pinned OMP version. The extension should not be considered complete until the required automated tests and real OMP sessions using functioning providers have passed.
+1. Copy [example pool JSON](examples/instance-model-pool.json) and replace the placeholder model IDs.
+2. **Set `retry.modelFallback: false` in OMP** and avoid other model-routing extensions.
+3. Install the entrypoint in [`src/extension.ts`](src/extension.ts) (with its adjacent `pool.ts`).
+4. Run `npm test` for the deterministic and mocked tests.
+
+**Caveat:** Detecting a native fallback after it happens does not guarantee interception before a request reaches the fallback model. Actual no-switch behavior and stop-on-error must be proven with live OMP/provider request traces before release. Optional shuffle-bag diversity is currently only process-local, not cross-process.
+
+## Review sequence
+
+- PR 1 — planning/design and acceptance gates (`initial-project-plan` into `main`).
+- PR 2 — implementation, tests, example config, and CI (`feat/instance-model-pool-runtime` into `initial-project-plan`).
+
+Merge the design PR first, then retarget the runtime PR to `main` for normal merging. No PR claims live-test success.
