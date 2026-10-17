@@ -4,7 +4,7 @@ An OMP-native TypeScript extension that draws **one model per new main session o
 
 ## Status
 
-**Experimental implementation for review; real OMP/provider live tests have not yet run.** The deterministic pure-selection and mocked lifecycle tests pass locally (11 tests, Node 22.16.0). See [the detailed plan](PLAN.md) and [installation and caveats](docs/INSTALL.md).
+**Experimental implementation for review; real OMP/provider live tests have not yet run.** The deterministic pure-selection and mocked lifecycle tests pass locally (14 tests, Node 22.16.0). See [the detailed plan](PLAN.md) and [installation and caveats](docs/INSTALL.md).
 
 ## Implemented
 
@@ -25,6 +25,13 @@ An OMP-native TypeScript extension that draws **one model per new main session o
 4. Run `npm test` for the deterministic and mocked tests.
 
 **Caveat:** Detecting a native fallback after it happens does not guarantee interception before a request reaches the fallback model. Actual no-switch behavior and stop-on-error must be proven with live OMP/provider request traces before release. Optional shuffle-bag diversity is currently only process-local, not cross-process.
+
+## Current review blockers
+
+- Real OMP/provider acceptance scenarios LT-01–LT-07 are not yet validated. Unit tests only exercise a mocked OMP context.
+- Native `ctx.shutdown()` can be a no-op in headless modes; the extension additionally invokes `ctx.abort()` at provider-request boundaries, but this must be proved against a real request path before pinning can be called fail-closed.
+- OMP's `task.prewalk` and agent-level prewalk can deliberately change models mid-child. Disable prewalk in OMP config/agent definitions until real instrumentation confirms that this plugin can reject internal handoffs safely.
+- Codex review is connected, but Codex coding tasks currently return “create an environment for this repo”; see [Codex environments](https://chatgpt.com/codex/cloud/settings/environments).
 
 ## Review sequence
 
