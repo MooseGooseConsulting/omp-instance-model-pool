@@ -4,7 +4,7 @@ An OMP-native TypeScript extension that draws **one model per new main session o
 
 ## Status
 
-**Experimental implementation for review; real OMP/provider live tests have not yet run.** The deterministic pure-selection and mocked lifecycle tests pass locally (22 tests, Node 22.16.0; typechecked against OMP 18.12.1). See [the detailed plan](PLAN.md) and [installation and caveats](docs/INSTALL.md).
+**Experimental implementation for review; real OMP/provider live tests have not yet run.** The deterministic pure-selection and mocked lifecycle tests pass locally (25 tests, Node 22.16.0; typechecked against OMP 18.12.1). See [the detailed plan](PLAN.md) and [installation and caveats](docs/INSTALL.md).
 
 ## Implemented
 
@@ -12,8 +12,8 @@ An OMP-native TypeScript extension that draws **one model per new main session o
 - Separate main, named-agent, and default subagent pools.
 - Registry-based model eligibility and explicit activation checks; empty subagent pools block dispatch.
 - `before_subagent_spawn` chooses once per child and returns a concrete model.
-- `session_start`, `session_switch`, and `session_branch` handle new, resumed, forked, branched, and BTW-promoted main sessions; concurrent initialization for a destination is coalesced.
-- Model assignment saved as OMP custom session state; no re-draw on resume.
+- `session_start`, `session_switch`, and `session_branch` handle new, resumed, forked, branched, and BTW-promoted main sessions; concurrent activation is serialized across destinations, and failed resume rollbacks restore the originating pin.
+- Model assignment saved as OMP custom session state; resume reasserts the saved pin once after OMP completes its own restoration, never on each turn.
 - Detection of unexpected model drift or fallback requests session shutdown.
 - `/model-pool` reports the current assignment.
 
