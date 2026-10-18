@@ -1,6 +1,7 @@
 name: CI
 on:
   pull_request:
+  workflow_dispatch:
   push:
     branches: [main]
 jobs:
@@ -11,4 +12,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.16.0'
+      - run: npm ci --ignore-scripts --omit=optional --no-audit --no-fund
+      - run: npm run typecheck
       - run: npm test

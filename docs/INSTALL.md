@@ -12,7 +12,7 @@ Set `OMP_INSTANCE_MODEL_POOL_CONFIG=/absolute/path/pools.json` to override the p
 
 ## Validation status
 
-`npm test` runs deterministic pure-selection tests and mocked OMP lifecycle tests, without real provider credentials. **20 local tests passed** on Node 22.14.0 in this change (`node --experimental-strip-types --test test/*.test.ts`). This does **not** establish real OMP compatibility.
+`npm test` runs deterministic pure-selection tests and mocked OMP lifecycle tests, without real provider credentials. **22 tests passed** on Node 22.16.0 in this change (`node --experimental-strip-types --test test/*.test.ts`). TypeScript also checked cleanly against published `@oh-my-pi/pi-coding-agent@18.12.1`. See [recorded validation](../evidence/2026-10-18-unit-and-typecheck.md). This does **not** establish real OMP/provider execution compatibility.
 
 The acceptance plan in [PLAN.md](../PLAN.md) requires real OMP execution against two functioning models/providers, parallel subagents, resume/fork cycles, and provider-observed traffic. A UI model label does not prove which backend served a request.
 

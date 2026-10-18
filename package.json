@@ -4,7 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --experimental-strip-types --test test/*.test.ts"
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "check": "npm run typecheck && npm test"
   },
-  "engines": {"node": ">=22.16"}
+  "engines": {
+    "node": ">=22.16"
+  },
+  "devDependencies": {
+    "@oh-my-pi/pi-coding-agent": "18.12.1",
+    "@types/node": "22.20.5",
+    "typescript": "5.8.3"
+  }
 }
