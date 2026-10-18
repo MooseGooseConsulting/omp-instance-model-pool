@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import extension from '../src/extension.ts';
 
-function harness(options: { sub?: boolean; eligible?: string[] } = {}) {
+function harness(options: { sub?: boolean; eligible?: string[]; hasUI?: boolean } = {}) {
   const handlers = new Map<string, Function>();
   const entries: any[] = [];
   const notifications: string[] = [];
@@ -27,6 +27,7 @@ function harness(options: { sub?: boolean; eligible?: string[] } = {}) {
   };
   const ctx = {
     cwd: process.cwd(),
+    hasUI: options.hasUI !== false,
     agent: {kind:options.sub?'sub':'main',name:options.sub?'reviewer':'main'},
     models: {list:()=>models, current:()=>current,
       resolve:(spec:string)=>models.find(m=>`${m.provider}/${m.id}`===spec)},
@@ -52,6 +53,18 @@ writeFileSync(join(temp,'pool.json'), JSON.stringify({version:1,pools:{
 }}));
 process.env.OMP_INSTANCE_MODEL_POOL_CONFIG=join(temp,'pool.json');
 
+test('headless fail-closed startup reports the error on stderr',async()=>{
+  const previous=console.error;
+  const lines:string[]=[];
+  console.error=(...parts:unknown[])=>{lines.push(parts.map(String).join(' '));};
+  try {
+    const h=harness({eligible:['three/c'],hasUI:false});
+    await h.emit('session_start');
+    assert.equal(h.stopped,true);
+    assert.equal(h.aborted,true);
+    assert.match(lines.join(' '),/no authenticated\/available models in pool main/);
+  } finally { console.error=previous; }
+});
 test('main session chooses once, preserves selection across prompts and resumes',async()=>{
   const h=harness();
   await h.emit('session_start');
