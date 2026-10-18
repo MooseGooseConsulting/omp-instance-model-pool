@@ -41,6 +41,8 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
   let halted = false;
   // Concurrent lifecycle notifications for one destination must share one draw.
   const pendingInitialization = new Map<string, Promise<void>>();
+  // OMP's transition scopes overlap; serialize activations across destination IDs.
+  let activationTail: Promise<void> = Promise.resolve();
 
   function getSelector(ctx: Ctx): PoolSelector {
     const path = getConfigPath(ctx.cwd);
@@ -65,17 +67,26 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
     ctx.shutdown();
   }
   async function apply(ctx: Ctx, selected: Assignment, append: boolean): Promise<void> {
+    // Never apply a selection belonging to a transition that another session superseded.
+    if (selected.sessionId !== ctx.sessionManager.getSessionId()) return;
     if (!availableModels(ctx).has(selected.model)) {
       stop(ctx, `pinned model unavailable: ${selected.model}`);
       return;
     }
     const model = ctx.models.resolve(selected.model);
-    if (!model || `${model.provider}/${model.id}` !== selected.model || !await pi.setModel(model)) {
+    if (!model || `${model.provider}/${model.id}` !== selected.model) {
+      stop(ctx, `cannot resolve model ${selected.model}`);
+      return;
+    }
+    const activated = await pi.setModel(model);
+    // A different transition may have started while setModel was pending.
+    if (selected.sessionId !== ctx.sessionManager.getSessionId()) return;
+    if (!activated) {
       stop(ctx, `cannot activate model ${selected.model}`);
       return;
     }
     assignment = selected;
-    assignedSessionId = ctx.sessionManager.getSessionId();
+    assignedSessionId = selected.sessionId;
     if (append) pi.appendEntry(ENTRY, selected);
     ctx.ui.setStatus('instance-model-pool', `pinned: ${selected.model}`);
   }
@@ -95,8 +106,11 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
     if (assignedSessionId === id && assignment) return;
     const pending = pendingInitialization.get(id);
     if (pending) { await pending; return; }
+    const prior = activationTail;
     const initialization = (async () => {
       try {
+        await prior;
+        if (ctx.sessionManager.getSessionId() !== id) return;
         const old = redraw ? undefined : persisted(ctx);
         const inherited = old && (
           (old.sessionId && old.sessionId !== id) ||
@@ -113,6 +127,7 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
         stop(ctx, `initialization failed: ${String(error)}`);
       }
     })();
+    activationTail = initialization;
     pendingInitialization.set(id, initialization);
     try { await initialization; }
     finally {
@@ -144,7 +159,19 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
       return {block:true, reason:`instance model pool: ${String(error)}`};
     }
   });
-  pi.on('before_agent_start', (_event, ctx) => {
+  pi.on('before_agent_start', async (_event, ctx) => {
+    if (ctx.agent.kind !== 'sub' && assignedSessionId !== ctx.sessionManager.getSessionId()) {
+      // A failed OMP resume restores its original session but emits no rollback event.
+      // Recover only its *persisted* pin, never re-draw at a request boundary.
+      const id = ctx.sessionManager.getSessionId();
+      const old = persisted(ctx);
+      if (!old || (old.sessionId && old.sessionId !== id)) {
+        stop(ctx, `no matching persisted pin for active session ${id}`);
+        return;
+      }
+      halted = false;
+      await initialize(ctx, false);
+    }
     if (halted) { ctx.abort?.(); ctx.shutdown(); return; }
     const actual = ctx.models.current();
     if (assignment && (!actual || `${actual.provider}/${actual.id}` !== assignment.model))
