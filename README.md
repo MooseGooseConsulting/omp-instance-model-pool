@@ -4,7 +4,7 @@ An OMP-native TypeScript extension that draws **one model per new main session o
 
 ## Status
 
-**Experimental implementation for review; real OMP/provider live tests have not yet run.** The deterministic pure-selection and mocked lifecycle tests pass locally (25 tests, Node 22.16.0; typechecked against OMP 18.12.1). See [the detailed plan](PLAN.md) and [installation and caveats](docs/INSTALL.md).
+**Experimental implementation for review; real OMP/provider live tests have not yet run.** The deterministic pure-selection and mocked lifecycle tests pass locally (28 tests, Node 22.16.0; typechecked against OMP 18.12.1). See [the detailed plan](PLAN.md), [installation](docs/INSTALL.md), and [native OMP headless synthetic validation](evidence/2026-10-18-headless-omp-synthetic.md).
 
 ## Implemented
 
@@ -26,7 +26,7 @@ An OMP-native TypeScript extension that draws **one model per new main session o
 
 **Caveat:** Detecting a native fallback after it happens does not guarantee interception before a request reaches the fallback model. Actual no-switch behavior and stop-on-error must be proven with live OMP/provider request traces before release. Optional shuffle-bag diversity is currently only process-local, not cross-process.
 
-## Current review blockers
+A real OMP 18.12.1 headless smoke against a **synthetic loopback** provider verified one pinned `fake/one` request and zero provider requests when no model was eligible. This is not LT-01–LT-07 live-provider acceptance; the aborted headless process also returned exit code 0 despite reporting its error to stderr.\n\n## Current review blockers
 
 - Real OMP/provider acceptance scenarios LT-01–LT-07 are not yet validated. Unit tests only exercise a mocked OMP context.
 - Native `ctx.shutdown()` can be a no-op in headless modes; the extension additionally invokes `ctx.abort()` at provider-request boundaries, but this must be proved against a real request path before pinning can be called fail-closed.

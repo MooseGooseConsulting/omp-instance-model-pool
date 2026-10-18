@@ -12,9 +12,9 @@ Set `OMP_INSTANCE_MODEL_POOL_CONFIG=/absolute/path/pools.json` to override the p
 
 ## Validation status
 
-`npm test` runs deterministic pure-selection tests and mocked OMP lifecycle tests, without real provider credentials. **25 tests passed** on Node 22.16.0 in this change (`node --experimental-strip-types --test test/*.test.ts`). TypeScript also checked cleanly against published `@oh-my-pi/pi-coding-agent@18.12.1`. See [recorded validation](../evidence/2026-10-18-unit-and-typecheck.md). This does **not** establish real OMP/provider execution compatibility.
+`npm test` runs deterministic pure-selection tests and mocked OMP lifecycle tests, without real provider credentials. **28 tests passed** on Node 22.16.0 in this change (`node --experimental-strip-types --test test/*.test.ts`). TypeScript also checked cleanly against published `@oh-my-pi/pi-coding-agent@18.12.1`. See [recorded unit/typecheck validation](../evidence/2026-10-18-unit-and-typecheck.md) and [native OMP synthetic headless smoke](../evidence/2026-10-18-headless-omp-synthetic.md). This does **not** establish real OMP/provider execution compatibility.
 
-The acceptance plan in [PLAN.md](../PLAN.md) requires real OMP execution against two functioning models/providers, parallel subagents, resume/fork cycles, and provider-observed traffic. A UI model label does not prove which backend served a request.
+The synthetic headless smoke observed that an aborted startup prints an error to stderr but exits with code 0. Shell automation cannot infer success from that exit code alone.\n\nThe acceptance plan in [PLAN.md](../PLAN.md) requires real OMP execution against two functioning models/providers, parallel subagents, resume/fork cycles, and provider-observed traffic. A UI model label does not prove which backend served a request.
 
 Important limitation: `retry_fallback_applied` is emitted *after* a fallback and cannot proactively prevent it. `retry.modelFallback: false` is mandatory until real OMP tests establish end-to-end pinning, including provider failures. A failure to select the main model requests session shutdown; this must also be verified across TUI/headless modes.
 
