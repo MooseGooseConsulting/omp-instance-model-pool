@@ -93,6 +93,42 @@ test('new and fork create exactly one record each, even with both fork notificat
   await h.emit('session_branch',{reason:'branch'});
   assert.equal(h.entries.length,3);
 });
+test('named branch and BTW promotion each pin a newly created session',async()=>{
+  const h=harness();
+  await h.emit('session_start');
+  h.setSession('named-branch');
+  await h.emit('session_branch',{reason:'branch'});
+  assert.equal(h.entries.length,2);
+  assert.equal(h.entries[1].data.sessionId,'named-branch');
+  const branchModel=h.current.id;
+  await h.emit('session_branch',{reason:'branch'});
+  await h.emit('session_switch',{reason:'resume'});
+  assert.equal(h.entries.length,2);
+  assert.equal(h.current.id,branchModel);
+  h.setSession('btw-promoted');
+  await h.emit('session_branch',{reason:'btw'});
+  assert.equal(h.entries.length,3);
+  assert.equal(h.entries[2].data.sessionId,'btw-promoted');
+  const btwModel=h.current.id;
+  await h.emit('session_branch',{reason:'btw'});
+  assert.equal(h.current.id,btwModel);
+  assert.equal(h.entries.length,3);
+});
+test('overlapping lifecycle notifications share exactly one pending draw',async()=>{
+  const h=harness();
+  const originalSetModel=h.pi.setModel.bind(h.pi);
+  let release!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  h.pi.setModel=async (model:any)=>{await gate;return originalSetModel(model);};
+  const start=h.emit('session_start');
+  const duplicate=h.emit('session_start');
+  const branchNotification=h.emit('session_branch',{reason:'fork'});
+  release();
+  await Promise.all([start,duplicate,branchNotification]);
+  assert.equal(h.entries.length,1);
+  assert.equal(h.entries[0].data.sessionId,'session-0');
+  assert.equal(h.setCalls,1);
+});
 test('unqualified entry branch draws once for the new session',async()=>{
   const h=harness(); await h.emit('session_start');
   h.setSession('entry-branch');
