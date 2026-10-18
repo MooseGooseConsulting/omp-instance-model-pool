@@ -180,6 +180,33 @@ test('resume rollback restores the originating pin without another draw',async()
   assert.equal(h.aborted,false);
   assert.match(h.notifications.join(' '),new RegExp(`Pinned ${sourceModel.provider}/${sourceModel.id}`));
 });
+test('resume reasserts its persisted pin once after OMP post-hook restore',async()=>{
+  const h=harness();
+  await h.emit('session_start');
+  const initial=h.current;
+  const selected=h.models.find(m=>m.id!==initial.id)!;
+  const saved=h.entries[0];
+  h.setSession('resumed-1');
+  h.entries.splice(0,h.entries.length,{type:'custom',customType:saved.customType,
+    data:{...saved.data,model:`${selected.provider}/${selected.id}`,sessionId:'resumed-1'}});
+  await h.emit('session_switch',{reason:'resume'});
+  assert.equal(h.current.id,selected.id);
+  // Upstream OMP restores its saved session model after emitting session_switch,
+  // potentially replacing the extension's pin before the first request.
+  await h.pi.setModel(initial);
+  await h.emit('before_agent_start');
+  assert.equal(h.current.id,selected.id);
+  assert.equal(h.entries.length,1);
+  assert.equal(h.stopped,false);
+  const activationCount=h.setCalls;
+  await h.emit('before_agent_start');
+  assert.equal(h.setCalls,activationCount);
+  // A later manual/model fallback change in the same instance is *not* allowed.
+  await h.pi.setModel(initial);
+  await h.emit('before_agent_start');
+  assert.equal(h.stopped,true);
+  assert.equal(h.aborted,true);
+});
 test('unqualified entry branch draws once for the new session',async()=>{
   const h=harness(); await h.emit('session_start');
   h.setSession('entry-branch');
