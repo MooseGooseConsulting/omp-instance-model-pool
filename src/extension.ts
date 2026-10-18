@@ -126,7 +126,9 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
         const selection = getSelector(ctx).choose('main', availableModels(ctx));
         await apply(ctx, {...selection, sessionId:id, at:new Date().toISOString()}, true);
       } catch (error) {
-        stop(ctx, `initialization failed: ${String(error)}`);
+        // A failed activation is not allowed to kill the newer session.
+        if (ctx.sessionManager.getSessionId() === id)
+          stop(ctx, `initialization failed: ${String(error)}`);
       }
     })();
     activationTail = initialization;
@@ -188,7 +190,16 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
       resumeReassertionId = undefined;
       if (!actualAfterSwitch || `${actualAfterSwitch.provider}/${actualAfterSwitch.id}` !== selected.model) {
         const prior = activationTail;
-        const restore = (async () => { await prior; await apply(ctx, selected, false); })();
+        const restore = (async () => {
+          try {
+            await prior;
+            await apply(ctx, selected, false);
+          } catch (error) {
+            // Keep the activation queue usable after a failed resume correction.
+            if (ctx.sessionManager.getSessionId() === selected.sessionId)
+              stop(ctx, `failed to restore pinned model ${selected.model}: ${String(error)}`);
+          }
+        })();
         activationTail = restore;
         await restore;
       }
