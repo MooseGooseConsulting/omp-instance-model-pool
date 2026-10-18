@@ -39,6 +39,8 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
   let assignment: Assignment | undefined;
   let assignedSessionId: string | undefined;
   let halted = false;
+  // Concurrent lifecycle notifications for one destination must share one draw.
+  const pendingInitialization = new Map<string, Promise<void>>();
 
   function getSelector(ctx: Ctx): PoolSelector {
     const path = getConfigPath(ctx.cwd);
@@ -91,21 +93,30 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
     // One destination session gets exactly one draw.
     const id = ctx.sessionManager.getSessionId();
     if (assignedSessionId === id && assignment) return;
-    try {
-      const old = redraw ? undefined : persisted(ctx);
-      const inherited = old && (
-        (old.sessionId && old.sessionId !== id) ||
-        (!old.sessionId && !!ctx.sessionManager.getHeader()?.parentSession)
-      );
-      if (old && !inherited) {
-        // Migrate legacy entries so future CLI startup forks can be distinguished.
-        await apply(ctx, {...old, sessionId:id}, !old.sessionId);
-        return;
+    const pending = pendingInitialization.get(id);
+    if (pending) { await pending; return; }
+    const initialization = (async () => {
+      try {
+        const old = redraw ? undefined : persisted(ctx);
+        const inherited = old && (
+          (old.sessionId && old.sessionId !== id) ||
+          (!old.sessionId && !!ctx.sessionManager.getHeader()?.parentSession)
+        );
+        if (old && !inherited) {
+          // Migrate legacy entries so future CLI startup forks can be distinguished.
+          await apply(ctx, {...old, sessionId:id}, !old.sessionId);
+          return;
+        }
+        const selection = getSelector(ctx).choose('main', availableModels(ctx));
+        await apply(ctx, {...selection, sessionId:id, at:new Date().toISOString()}, true);
+      } catch (error) {
+        stop(ctx, `initialization failed: ${String(error)}`);
       }
-      const selection = getSelector(ctx).choose('main', availableModels(ctx));
-      await apply(ctx, {...selection, sessionId:id, at:new Date().toISOString()}, true);
-    } catch (error) {
-      stop(ctx, `initialization failed: ${String(error)}`);
+    })();
+    pendingInitialization.set(id, initialization);
+    try { await initialization; }
+    finally {
+      if (pendingInitialization.get(id) === initialization) pendingInitialization.delete(id);
     }
   }
 
@@ -117,10 +128,8 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
     await initialize(ctx, event.reason !== 'resume');
   });
   pi.on('session_branch', async (event, ctx) => {
-    // Current OMP sets reason to fork, branch, or btw. OMP 18.4.8 emits a new
-    // entry branch with no reason; that event is a new instance and must draw.
-    // Named non-fork reasons stay ignored so an in-place rewind does not redraw.
-    if (event.reason !== 'fork' && event.reason !== undefined) return;
+    // Current OMP uses a new session identity for fork, branch and BTW promotion.
+    // session_tree is the in-place rewind event; all new identities draw exactly once.
     if (assignedSessionId === ctx.sessionManager.getSessionId() && assignment) return;
     halted = false;
     assignment = undefined;
