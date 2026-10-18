@@ -176,7 +176,9 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
       const id = ctx.sessionManager.getSessionId();
       const old = persisted(ctx);
       if (!old || (old.sessionId && old.sessionId !== id)) {
-        stop(ctx, `no matching persisted pin for active session ${id}`);
+        // An earlier initialization failure has already reported its cause.
+        if (!halted) stop(ctx, `no matching persisted pin for active session ${id}`);
+        else { ctx.abort?.(); ctx.shutdown(); }
         return;
       }
       halted = false;
