@@ -207,6 +207,65 @@ test('resume reasserts its persisted pin once after OMP post-hook restore',async
   assert.equal(h.stopped,true);
   assert.equal(h.aborted,true);
 });
+test('rejected stale activation cannot halt its successor session',async()=>{
+  const h=harness();
+  let entered!:()=>void;
+  let release!:()=>void;
+  const started=new Promise<void>(resolve=>{entered=resolve;});
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  const original=h.pi.setModel.bind(h.pi);
+  let count=0;
+  h.pi.setModel=async(model:any)=>{
+    count++;
+    if(count===1) {
+      entered();
+      await gate;
+      throw new Error('obsolete activation failed');
+    }
+    return original(model);
+  };
+  const first=h.emit('session_start');
+  await started;
+  h.setSession('successor');
+  const successor=h.emit('session_switch',{reason:'new'});
+  release();
+  await Promise.all([first,successor]);
+  assert.equal(h.entries.length,1);
+  assert.equal(h.entries[0].data.sessionId,'successor');
+  assert.equal(h.stopped,false);
+  assert.equal(h.aborted,false);
+  await h.emit('before_agent_start');
+  assert.equal(h.stopped,false);
+});
+test('failed resume model reassertion halts without rejecting future activation queue',async()=>{
+  const h=harness();
+  await h.emit('session_start');
+  const source=h.current;
+  const saved=h.entries[0];
+  const selected=h.models.find(m=>m.id!==source.id)!;
+  h.setSession('resumed');
+  h.entries.splice(0,h.entries.length,{type:'custom',customType:saved.customType,
+    data:{...saved.data,model:`${selected.provider}/${selected.id}`,sessionId:'resumed'}});
+  await h.emit('session_switch',{reason:'resume'});
+  await h.pi.setModel(source); // upstream reverts its model after the session-switch hook
+  const original=h.pi.setModel.bind(h.pi);
+  let attempts=0;
+  h.pi.setModel=async(model:any)=>{
+    attempts++;
+    if(attempts===1) throw new Error('injected restore error');
+    return original(model);
+  };
+  // An extension handler must contain the error and abort, not silently proceed.
+  await h.emit('before_agent_start');
+  assert.equal(h.aborted,true);
+  assert.equal(h.stopped,true);
+  assert.match(h.notifications.join(' '),/failed to restore pinned model/);
+  // A future session must not await a rejected activationTail forever.
+  h.setSession('later-new-session');
+  await h.emit('session_switch',{reason:'new'});
+  assert.equal(h.entries.at(-1).data.sessionId,'later-new-session');
+  assert.ok(attempts>=2);
+});
 test('unqualified entry branch draws once for the new session',async()=>{
   const h=harness(); await h.emit('session_start');
   h.setSession('entry-branch');
