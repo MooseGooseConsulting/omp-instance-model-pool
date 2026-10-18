@@ -43,6 +43,8 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
   const pendingInitialization = new Map<string, Promise<void>>();
   // OMP's transition scopes overlap; serialize activations across destination IDs.
   let activationTail: Promise<void> = Promise.resolve();
+  // OMP overwrites the selected model *after* emitting session_switch(resume).
+  let resumeReassertionId: string | undefined;
 
   function getSelector(ctx: Ctx): PoolSelector {
     const path = getConfigPath(ctx.cwd);
@@ -137,10 +139,14 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
 
   pi.on('session_start', async (_event, ctx) => initialize(ctx, false));
   pi.on('session_switch', async (event, ctx) => {
-    if (assignedSessionId === ctx.sessionManager.getSessionId() && assignment) return;
+    const id = ctx.sessionManager.getSessionId();
+    if (assignedSessionId === id && assignment) return;
     halted = false;
     assignment = undefined;
+    resumeReassertionId = undefined;
     await initialize(ctx, event.reason !== 'resume');
+    if (event.reason === 'resume' && assignedSessionId === id && assignment)
+      resumeReassertionId = id;
   });
   pi.on('session_branch', async (event, ctx) => {
     // Current OMP uses a new session identity for fork, branch and BTW promotion.
@@ -170,9 +176,24 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
         return;
       }
       halted = false;
+      resumeReassertionId = undefined;
       await initialize(ctx, false);
     }
     if (halted) { ctx.abort?.(); ctx.shutdown(); return; }
+    if (ctx.agent.kind !== 'sub' && resumeReassertionId === ctx.sessionManager.getSessionId() && assignment) {
+      // The host's post-event model restore may have overridden our saved pin.
+      // Reassert once for this resume, not once per prompt or tool call.
+      const selected = assignment;
+      const actualAfterSwitch = ctx.models.current();
+      resumeReassertionId = undefined;
+      if (!actualAfterSwitch || `${actualAfterSwitch.provider}/${actualAfterSwitch.id}` !== selected.model) {
+        const prior = activationTail;
+        const restore = (async () => { await prior; await apply(ctx, selected, false); })();
+        activationTail = restore;
+        await restore;
+      }
+      if (halted) { ctx.abort?.(); ctx.shutdown(); return; }
+    }
     const actual = ctx.models.current();
     if (assignment && (!actual || `${actual.provider}/${actual.id}` !== assignment.model))
       stop(ctx, `model drift detected; expected ${assignment.model}`);
