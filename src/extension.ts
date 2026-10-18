@@ -62,6 +62,8 @@ export default function instanceModelPool(pi: ExtensionAPI): void {
   function stop(ctx: Ctx, message: string): void {
     halted = true;
     ctx.ui.notify(`Model pool: ${message}`, 'error');
+    // Print/JSON mode has no interactive UI; its notify callback may be invisible.
+    if (!ctx.hasUI) console.error(`[omp-instance-model-pool] ${message}`);
     // Headless OMP may supply a no-op shutdown callback. Abort the active turn too.
     // Optional: a context without abort must still reach shutdown.
     // Real provider tests are still required to establish whether this stops dispatch.
