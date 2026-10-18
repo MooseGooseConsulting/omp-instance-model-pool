@@ -129,6 +129,57 @@ test('overlapping lifecycle notifications share exactly one pending draw',async(
   assert.equal(h.entries[0].data.sessionId,'session-0');
   assert.equal(h.setCalls,1);
 });
+test('an activation superseded by another session never writes to its destination',async()=>{
+  const h=harness();
+  let release!:()=>void;
+  let started!:()=>void;
+  const entered=new Promise<void>(resolve=>{started=resolve;});
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  const originalSet=h.pi.setModel.bind(h.pi);
+  let activations=0;
+  h.pi.setModel=async(model:any)=>{
+    activations++;
+    if(activations===1) {started();await gate;}
+    return originalSet(model);
+  };
+  const first=h.emit('session_start');
+  await entered;
+  h.setSession('session-1');
+  const second=h.emit('session_switch',{reason:'new'});
+  release();
+  await Promise.all([first,second]);
+  assert.equal(h.entries.length,1);
+  assert.equal(h.entries[0].data.sessionId,'session-1');
+  assert.equal(activations,2);
+  assert.equal(h.stopped,false);
+  await h.emit('before_agent_start');
+  assert.equal(h.aborted,false);
+});
+test('resume rollback restores the originating pin without another draw',async()=>{
+  const h=harness();
+  await h.emit('session_start');
+  const sourceEntry=h.entries[0];
+  const sourceModel=h.current;
+  const target=h.models.find(m=>m.id!==sourceModel.id)!;
+  const destinationEntry={type:'custom',customType:sourceEntry.customType,
+    data:{...sourceEntry.data,model:`${target.provider}/${target.id}`,sessionId:'resumed-1'}};
+  h.entries.splice(0,h.entries.length,destinationEntry);
+  h.setSession('resumed-1');
+  await h.emit('session_switch',{reason:'resume'});
+  assert.equal(h.current.id,target.id);
+  // OMP restores both the prior session and its model after a failed transition;
+  // it does not emit a compensating session_switch event.
+  h.entries.splice(0,h.entries.length,sourceEntry);
+  h.setSession('session-0');
+  await h.pi.setModel(sourceModel);
+  await h.emit('before_agent_start');
+  await h.emit('command');
+  assert.equal(h.current.id,sourceModel.id);
+  assert.equal(h.entries.length,1);
+  assert.equal(h.stopped,false);
+  assert.equal(h.aborted,false);
+  assert.match(h.notifications.join(' '),new RegExp(`Pinned ${sourceModel.provider}/${sourceModel.id}`));
+});
 test('unqualified entry branch draws once for the new session',async()=>{
   const h=harness(); await h.emit('session_start');
   h.setSession('entry-branch');
